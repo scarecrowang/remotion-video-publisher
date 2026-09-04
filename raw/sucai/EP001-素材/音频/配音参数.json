@@ -1,0 +1,24 @@
+{
+  "voice": "zh-CN-YunyangNeural",
+  "rate": "-10%",
+  "chars_total": 1192,
+  "chars_per_seg": [
+    28,
+    154,
+    355,
+    257,
+    233,
+    165
+  ],
+  "seg_duration_s": [
+    7.4,
+    38.3,
+    87.1,
+    65.8,
+    60.9,
+    39.7
+  ],
+  "narration_total_s": 299.2,
+  "full_track_s": 303.7,
+  "measured_cps": 3.98
+}

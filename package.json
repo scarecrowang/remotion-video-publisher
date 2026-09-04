@@ -1,0 +1,37 @@
+{
+  "name": "remotion-video-publisher",
+  "version": "1.0.0",
+  "description": "My Remotion video",
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion bundle",
+    "upgrade": "remotion upgrade",
+    "render": "bash scripts/render.sh",
+    "tts": "bash scripts/tts.sh",
+    "publish": "bash scripts/publish.sh",
+    "setup": "node scripts/setup.mjs",
+    "case-publish": "node scripts/case-publish.mjs",
+    "case-ingest": "node scripts/case-ingest.mjs",
+    "case-tts": "node scripts/case-tts.mjs",
+    "case-broll": "node scripts/case-broll.mjs",
+    "case-render": "node scripts/case-render.mjs",
+    "lint": "eslint src && tsc"
+  },
+  "repository": {},
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@remotion/cli": "4.0.520",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.520"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.520",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "private": true
+}
