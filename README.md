@@ -12,8 +12,8 @@ Cross-platform: macOS ✅ Windows ✅ Linux ✅
 
 ```bash
 # 1. Clone the project
-git clone <your-repo-url>
-cd video-publisher
+git clone https://github.com/scarecrowang/remotion-video-publisher.git
+cd remotion-video-publisher
 
 # 2. One-command setup (install deps + detect environment)
 npm run setup
