@@ -11,7 +11,7 @@
 # 典型工作流：
 #   1) 改 src/script.ts 里的文案
 #   2) bash scripts/publish.sh
-#   => 得到 out/MyComp.mp4 + out/thumb.png，配音与字幕自动按新文案时长重算
+#   => 得到 out/MyComp/MyComp.mp4 + out/MyComp/MyComp-thumb.png，配音与字幕自动按新文案时长重算
 #
 # 依赖：
 #   - scripts/tts.sh   （配音 + 时间轴，默认 ElevenLabs；无 key 自动回退 say）
@@ -37,7 +37,9 @@ for arg in "$@"; do
   esac
 done
 
-OUT="out/${COMP}.mp4"
+OUT_DIR="out/${COMP}"
+mkdir -p "${OUT_DIR}"
+OUT="${OUT_DIR}/${COMP}.mp4"
 
 echo "════════════════════════════════════════════"
 echo "  一键出片  |  ${COMP}  |  帧率FPS来自数据层"

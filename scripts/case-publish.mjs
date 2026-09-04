@@ -14,7 +14,7 @@
  * 工作流：
  *   1) content/<slug>.md 写分镜稿
  *   2) node scripts/case-publish.mjs <slug>
- *   => out/<slug>.mp4 + out/<slug>-thumb.png
+ *   => out/<slug>/<slug>.mp4 + out/<slug>/<slug>-thumb.png
  *
  * 环境变量：
  *   PEXELS_API_KEY     — Pexels API Key（B-roll 下载）
@@ -46,8 +46,9 @@ const DO_COVER = !args.includes("--no-cover");
 const coverArg = args.find((a) => a.startsWith("--frame="));
 const COVER_FRAME = coverArg ? Number(coverArg.split("=")[1]) : 820;
 
-const OUT = resolve(ROOT, "out", `${SLUG}.mp4`);
-const COVER = resolve(ROOT, "out", `${SLUG}-thumb.png`);
+const OUT_DIR = resolve(ROOT, "out", SLUG);
+const OUT = resolve(OUT_DIR, `${SLUG}.mp4`);
+const COVER = resolve(OUT_DIR, `${SLUG}-thumb.png`);
 
 // ---- 跨平台 Node 执行 ----
 const NODE = process.execPath;
@@ -90,7 +91,7 @@ async function main() {
   }
 
   // 确保输出目录
-  mkdirSync(resolve(ROOT, "out"), { recursive: true });
+  mkdirSync(OUT_DIR, { recursive: true });
 
   // 1) 解析分镜稿
   console.log("\n[1/5] 解析分镜稿 → src/case.generated.ts ...");

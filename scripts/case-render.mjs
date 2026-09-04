@@ -5,7 +5,7 @@
  * 自动检测/下载 Chromium，不再硬编码 macOS 路径。
  *
  * 用法：
- *   node scripts/case-render.mjs CaseEpisode out/video.mp4
+ *   node scripts/case-render.mjs CaseEpisode out/<slug>/<slug>.mp4
  *
  * 环境变量：
  *   CHROME_EXECUTABLE  — 指定 Chrome/Chromium 路径（可选，自动检测）
@@ -32,7 +32,7 @@ try {
 
 // ---- 解析参数 ----
 const COMP = process.argv[2] || "CaseEpisode";
-const OUT = process.argv[3] || resolve(ROOT, "out", `${COMP}.mp4`);
+const OUT = process.argv[3] || resolve(ROOT, "out", COMP, `${COMP}.mp4`);
 const ENTRY = resolve(ROOT, "src", "index.ts");
 
 if (!existsSync(ENTRY)) {

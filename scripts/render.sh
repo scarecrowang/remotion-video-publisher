@@ -4,8 +4,8 @@
 # 自动处理沙箱 rename 拦截：渲染完成后查找 remotion-in-progress 文件并手动重命名。
 #
 # 用法（在项目根目录）：
-#   bash scripts/render.sh                       # 渲染默认 MyComp -> out/MyComp.mp4
-#   bash scripts/render.sh Opening               # 渲染 Opening -> out/Opening.mp4
+#   bash scripts/render.sh                       # 渲染默认 MyComp -> out/MyComp/MyComp.mp4
+#   bash scripts/render.sh Opening               # 渲染 Opening -> out/Opening/Opening.mp4
 #   bash scripts/render.sh Opening out/o.mp4     # 自定义输出路径
 #
 # 这层 shell 包装绕开 workbuddy 沙箱里两套限制：
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 COMP=${1:-MyComp}
-OUT=${2:-out/${COMP}.mp4}
+OUT=${2:-out/${COMP}/${COMP}.mp4}
 OUT_DIR=$(dirname "$OUT")
 OUT_NAME=$(basename "$OUT")
 

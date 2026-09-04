@@ -123,7 +123,7 @@ npm run case-publish my-case
 ```
 [1/4] 解析分镜稿 ...
 [2/4] 生成配音 + 字幕时间轴 ...
-[3/4] 渲染成片 → out/my-case.mp4 ...
+[3/4] 渲染成片 → out/my-case/my-case.mp4 ...
 [4/4] 抽封面帧 ...
 完成 ✅
 ```
@@ -132,11 +132,12 @@ npm run case-publish my-case
 
 ### 第 4 步：去拿你的视频
 
-打开 `out/` 文件夹，你会看到：
+打开 `out/` 文件夹，你会看到每条视频独立一个文件夹：
 
 ```
-out/my-case.mp4        ← 你的视频
-out/my-case-thumb.png  ← 封面图
+out/my-case/
+├── my-case.mp4        ← 你的视频
+└── my-case-thumb.png  ← 封面图
 ```
 
 双击就能播放/上传 ✅🎉

@@ -126,8 +126,8 @@ All keys go into `.env` (`.env.example` is provided as a template).
 ## Output
 
 ```
-out/<slug>.mp4           ← 1080×1920 30fps MP4 video
-out/<slug>-thumb.png     ← Cover image (frame ~27s)
+out/<slug>/<slug>.mp4        ← 1080×1920 30fps MP4 video
+out/<slug>/<slug>-thumb.png  ← Cover image (frame ~27s)
 ```
 
 ---
@@ -143,7 +143,7 @@ scripts/case-tts.mjs       ← TTS voiceover + subtitle timings
 scripts/case-render.mjs    ← Render with @remotion/renderer (Node API)
         │
         ▼
-out/<slug>.mp4 + cover     ← Final video
+out/<slug>/<slug>.mp4 + cover ← Final video
 ```
 
 ---

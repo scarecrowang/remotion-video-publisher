@@ -10,7 +10,7 @@
 # 完整工作流：
 #   1) 在 content/<slug>.md 里写分镜稿（每镜可配 broll: 关键词）
 #   2) bash scripts/case-publish.sh <slug>
-#   => out/<slug>.mp4 + out/<slug>-thumb.png
+#   => out/<slug>/<slug>.mp4 + out/<slug>/<slug>-thumb.png
 # 配音服务默认走 .env 的 TTS_PROVIDER（默认 volcano 火山豆包语音 Seed TTS）；
 # 想临时换本地免费声：TTS_PROVIDER=say bash scripts/case-publish.sh <slug>
 # B-roll 素材走 Pexels 免费视频库，需在 .env 配 PEXELS_API_KEY。
@@ -39,8 +39,10 @@ for arg in "$@"; do
   esac
 done
 
-OUT="out/${SLUG}.mp4"
-COVER="out/${SLUG}-thumb.png"
+OUT_DIR="out/${SLUG}"
+mkdir -p "${OUT_DIR}"
+OUT="${OUT_DIR}/${SLUG}.mp4"
+COVER="${OUT_DIR}/${SLUG}-thumb.png"
 
 echo "════════════════════════════════════════════"
 echo "  案例速览片  |  ${SLUG}  |  题材: energy"
