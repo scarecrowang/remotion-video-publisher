@@ -123,12 +123,12 @@ Add new themes in `src/case/caseTheme.ts` (`CASE_PALETTES`).
 
 > **Default TTS_PROVIDER is `auto`** — the script first probes for a local MOSS-TTS-Nano service (http://127.0.0.1:18083); if reachable it uses it (human-like Chinese, no key), otherwise falls back to the platform's built-in free TTS (macOS→say, Windows→powershell, Linux→espeak). For premium human-like Chinese voiceover with a cloud API, set `TTS_PROVIDER=volcano` in `.env`.
 >
-> **Install local MOSS-TTS-Nano (optional, recommended for free human-like voice):**
+> **Install local MOSS-TTS-Nano (optional, recommended for free human-like voice):** one-command auto deploy (clone → venv → deps → detached service → health check; ~5 min first-run model download):
 > ```bash
-> git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git && cd MOSS-TTS-Nano
-> pip install -r requirements.txt && pip install -e .
-> moss-tts-nano serve    # persistent service on http://127.0.0.1:18083
+> node scripts/setup-moss.mjs     # one-click deploy + start (auto-skips if already running)
+> # or run `npm run setup` — its step 7 also auto-probes/deploys MOSS
 > ```
+> Manual fallback: `git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git && cd MOSS-TTS-Nano` → `pip install -r requirements.txt && pip install -e .` → `moss-tts-nano serve` (persistent service on http://127.0.0.1:18083). Windows pynini issues: the script retries with a standalone pynini install; if it still fails, follow repo Issue #6 for a matching platform wheel.
 > Once running, `auto` mode prefers it automatically. Optionally set `MOSS_PROMPT_AUDIO=<reference audio>` in `.env` to clone a fixed brand voice (3s clip).
 
 ---

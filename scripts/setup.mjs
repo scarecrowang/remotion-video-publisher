@@ -13,9 +13,10 @@
  *   4. 检测/下载 Chromium
  *   5. TypeScript 编译检查
  *   6. 创建 .env（如不存在）
+ *   7. 探测本地 MOSS-TTS / 未部署则自动一键部署（免 Key 中文真人感 TTS）
  */
 
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -202,6 +203,46 @@ function ensureDotenv() {
   }
 }
 
+// ---- 步骤 7: 探测/部署本地 MOSS-TTS（免 Key，真人感中文 TTS）----
+// 健康探测地址默认 http://127.0.0.1:18083，可用 MOSS_TTS_BASE_URL 覆盖。
+const MOSS_DEFAULT_BASE = "http://127.0.0.1:18083";
+
+async function mossHealthOk(timeoutMs = 1500) {
+  const base = (process.env.MOSS_TTS_BASE_URL || MOSS_DEFAULT_BASE).replace(/\/$/, "");
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(`${base}/health`, { signal: controller.signal });
+    clearTimeout(t);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureMossTts() {
+  // 已在运行 → 直接跳过
+  if (await mossHealthOk(1500)) {
+    console.log(c.green("  ✅") + ` 本地 MOSS-TTS 已在运行（${MOSS_DEFAULT_BASE}）`);
+    return;
+  }
+  console.log(c.yellow("  ⏳") + " 未检测到本地 MOSS-TTS，自动部署（免 Key 真人感中文 TTS，首次需下载 ~1GB 模型）...");
+  const script = resolve(__dirname, "setup-moss.mjs");
+  if (!existsSync(script)) {
+    console.warn(c.dim("     scripts/setup-moss.mjs 不存在，跳过（可用 TTS_PROVIDER=volcano 或平台免费 TTS）"));
+    return;
+  }
+  try {
+    // setup-moss.mjs 内部任何失败都自身兜底（不抛死），这里只需透传输出
+    const r = spawnSync(NODE, [script], { cwd: ROOT, stdio: "inherit" });
+    if (r.status !== 0) {
+      console.warn(c.yellow("  ⚠️") + " MOSS 部署未完成（不影响：auto 模式会回落平台免费 TTS）");
+    }
+  } catch (err) {
+    console.warn(c.yellow("  ⚠️") + ` MOSS 部署异常: ${err.message}（可稍后手动运行 node scripts/setup-moss.mjs）`);
+  }
+}
+
 // ---- 主流程 ----
 async function main() {
   console.log("════════════════════════════════════════════");
@@ -226,10 +267,14 @@ async function main() {
   console.log("\n[6/6] API Key 配置");
   ensureDotenv();
 
+  console.log("\n[7/7] 本地 MOSS-TTS（免 Key 真人感 TTS）");
+  await ensureMossTts();
+
   console.log("\n════════════════════════════════════════════");
   console.log(c.green("  环境检测完成 ✅"));
   console.log("  下一步: 编辑 .env 填写 API Key，然后运行:");
   console.log(c.dim("    node scripts/case-publish.mjs <slug>"));
+  console.log("  TTS: auto 模式默认优先本地 MOSS（已部署则免 Key 真人感）");
   console.log("════════════════════════════════════════════");
 }
 

@@ -567,10 +567,15 @@ const mossBaseUrl = () =>
 // 首次 MOSS 失败时打印完整部署指引，后续只简短报错（避免逐镜刷屏）
 let mossHintShown = false;
 
-// 平台对应的 MOSS 部署指引
+// 平台对应的 MOSS 部署指引（首选一键脚本；以下为手动分步兜底）
 const installMossHint = () => {
-  const p = platform();
   const lines = [];
+  lines.push("# 方式一（推荐）：一键自动部署（检测→clone→venv→装依赖→后台启动→健康检查）");
+  lines.push("node scripts/setup-moss.mjs");
+  lines.push("# 或整包环境都装一遍时：node scripts/setup.mjs（同样会自动部署 MOSS）");
+  const p = platform();
+  lines.push("");
+  lines.push("# 方式二：手动分步");
   if (p === "darwin") {
     lines.push("# macOS（命令行一行装完）");
     lines.push("brew install python@3.12 ffmpeg");

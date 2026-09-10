@@ -176,17 +176,17 @@ out/my-case/
 
 | 你的系统 | 会用哪个 | 需要安装？ |
 |---|---|---|
-| 任意（已装 MOSS） | **MOSS-TTS-Nano（本地真人声）** | 一次性部署（见下），免 Key、中文标准普通话 |
+| 任意（已装 MOSS） | **MOSS-TTS-Nano（本地真人声）** | 一键部署（见下），免 Key、中文标准普通话 |
 | macOS | `say` 命令 | ✅ 零配置，直接可用 |
 | Windows | PowerShell `System.Speech` | ✅ 零配置，直接可用 |
 | Linux | `espeak-ng` | ❌ 需 `sudo apt install espeak-ng`（只需一次） |
 
-> **推荐：装本地 MOSS-TTS-Nano（免费真人感）**。开源 Apache-2.0，0.1B 参数纯 CPU 实时运行，中文标准普通话，3 秒参考音频还能克隆声线。一次性部署（约 5 分钟下载模型）：
+> **推荐：装本地 MOSS-TTS-Nano（免费真人感）**。开源 Apache-2.0，0.1B 参数纯 CPU 实时运行，中文标准普通话，3 秒参考音频还能克隆声线。**推荐一键部署**（自动完成 clone → 建 venv → 装依赖 → 后台启动 → 健康检查，约 5 分钟下载模型）：
 > ```bash
-> git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git && cd MOSS-TTS-Nano
-> pip install -r requirements.txt && pip install -e .
-> moss-tts-nano serve    # 常驻服务，默认 http://127.0.0.1:18083
+> node scripts/setup-moss.mjs     # 一键部署 + 启动（未装则自动装，已在跑则跳过）
+> # 或运行 npm run setup 也会自动探测/部署 MOSS（第 7 步）
 > ```
+> 手动画兜底：`git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git && cd MOSS-TTS-Nano` → `pip install -r requirements.txt && pip install -e .` → `moss-tts-nano serve`（常驻，默认 http://127.0.0.1:18083）。Windows 遇 `pynini` 安装失败：脚本会自动先单独装 pynini 再重试，仍失败请按仓库 Issue #6 配匹配平台 wheel。
 > 之后 `auto` 模式自动优先用它；可用 `MOSS_PROMPT_AUDIO=` 指定参考音频固定声线。
 >
 > 想让配音有"更强真人感"（中文母语、自然），可以在 `.env` 文件里配火山引擎 Key（管理员做一次就行），然后在命令前加 `TTS_PROVIDER=volcano` 即可。
@@ -212,7 +212,7 @@ out/my-case/
 | 命令提示 `未找到命令/npm: command not found` | 说明还没装好基础软件，看文末"第一次准备" |
 | 命令提示 `未知参数/文件不存在` | 名字拼错：文件在 `content/` 下且**不带 `.md`** 输入；只能英文数字 |
 | 命令提示 `需要登录/额度不足/报错` | 默认走免费 TTS（auto模式），不依赖外部服务。如果 TTS 报错，试试 `TTS_PROVIDER=auto` 强制使用本地免费配音 |
-| 视频里配音是"机器声" | 说明本地 MOSS 未装、也没有火山 key，走到了免费 TTS。想听真人中文声：装本地 MOSS（见「四、关于配音」），或让管理员确认火山 key/音色已配好，把 `.env` 里的 `TTS_PROVIDER=auto` 改成 `TTS_PROVIDER=volcano` 再重跑 |
+| 视频里配音是"机器声" | 说明本地 MOSS 未装、也没有火山 key，走到了免费 TTS。想听真人中文声：运行 `node scripts/setup-moss.mjs` 一键部署本地 MOSS（见「四、关于配音」），或让管理员确认火山 key/音色已配好，把 `.env` 里的 `TTS_PROVIDER=auto` 改成 `TTS_PROVIDER=volcano` 再重跑 |
 | 字幕和声音对不上 | 少见。多数是改了稿子后**忘了重新跑**那条命令，重跑即可 |
 | 我改了稿子想重出一次 | 直接再跑一次第 3 步的命令即可，会覆盖旧文件 |
 | 跑一半报一堆英文红色字 | 别慌，多半是网络/额度问题。把报错截图发给懂的人看，或先切本地免费配音 |
