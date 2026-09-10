@@ -68,7 +68,7 @@ headers["X-Api-Request-Id"] = `test-${Date.now()}`;
 const body = {
   user: { uid: "volcano-test" },
   req_params: {
-    text: "晚遇知缘，看透心理疏导底层逻辑。这是一段火山语音合成接口的自检音频，请完整读出这句话。",
+    text: "深度洞察，看透心理疏导底层逻辑。这是一段火山语音合成接口的自检音频，请完整读出这句话。",
     speaker,
     audio_params: { format: "mp3", sample_rate: sampleRate },
   },
@@ -76,7 +76,7 @@ const body = {
 
 const url = "https://openspeech.bytedance.com/api/v3/tts/unidirectional";
 console.log(`→ POST ${url}`);
-console.log("  合成文本：晚遇知缘，看透心理疏导底层逻辑。……");
+console.log("  合成文本：深度洞察，看透心理疏导底层逻辑。……");
 
 let lastErr = "";
 for (let attempt = 1; attempt <= 4; attempt++) {

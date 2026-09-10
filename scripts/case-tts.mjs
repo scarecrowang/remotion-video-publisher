@@ -8,10 +8,19 @@
  *     => 写 public/case-audio/<slug>_<index>.m4a
  *     => 重写 src/caseTimings.generated.ts（每镜总帧 + 每句字幕起止）
  *
- * 配音服务（TTS_PROVIDER）——全部在 .env 里配置：
+ * 配音服务（TTS_PROVIDER）——全部在 .env 里配置或命令行指定：
+ *   - moss       本地 MOSS-TTS-Nano（开源 Apache-2.0 · CPU 实时 · 免 Key · 中文真人感）
+ *                部署：git clone https://github.com/OpenMOSS/MOSS-TTS-Nano && pip install -e . && moss-tts-nano serve
+ *                默认 http://127.0.0.1:18083；可选 MOSS_PROMPT_AUDIO=<参考音频> 做 3s 语音克隆
  *   - volcano    火山引擎·豆包语音合成大模型(Seed TTS)，推荐（真人感强、中文母语）
  *   - elevenlabs ElevenLabs，原默认
- *   - say        macOS 本地免费配音（草稿/预览用）
+ *   - openai     OpenAI TTS（需 OPENAI_API_KEY）
+ *   - azure      Azure Speech（需 AZURE_SPEECH_KEY + AZURE_SPEECH_REGION）
+ *   - google     Google Cloud TTS（需 GOOGLE_TTS_CREDENTIALS）
+ *   - say        macOS 本地免费配音（草稿/预览用，零配置）
+ *   - powershell Windows 本地免费 TTS（System.Speech，零配置）
+ *   - espeak     Linux 本地免费 TTS（espeak-ng，需 apt install）
+ *   - auto       自动选路：本地 MOSS 服务可达 → moss（真人感、免 Key）；否则按平台免费 TTS（macOS→say, Windows→powershell, Linux→espeak）
  *
  * 与 src/scripts/tts.mjs 的差异：
  *   - 数据源是 case.generated.ts（不是 SCRIPT）
@@ -32,7 +41,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, platform } from "node:os";
 import { join, resolve } from "node:path";
 
 import {
@@ -58,11 +67,13 @@ const readDotEnv = () => {
   return parsed;
 };
 
-// 配音服务：命令行 TTS_PROVIDER > .env 里的 TTS_PROVIDER > 默认 volcano
+// 配音服务：命令行 TTS_PROVIDER > .env 里的 TTS_PROVIDER > 默认 auto（自动选路：本地 MOSS 优先，否则平台免费 TTS）
 const ENV = readDotEnv();
-const PROVIDER = (
-  process.env.TTS_PROVIDER ?? ENV.TTS_PROVIDER ?? "volcano"
+let PROVIDER = (
+  process.env.TTS_PROVIDER ?? ENV.TTS_PROVIDER ?? "auto"
 ).toLowerCase();
+
+// auto 是异步探测占位：真正选路延迟到 main() 开头（moss 服务可达性检测在本函数内 async 完成）
 
 const FPS = 30;
 const LEAD_IN = 0.35; // 段首留白
@@ -328,7 +339,177 @@ const synthOneEleven = async (text, index, segment) => {
   throw new Error(`ElevenLabs 重试失败 ${lastErr}`);
 };
 
-// ---------- macOS 本地 fallback（零成本预览用）----------
+// ---------- OpenAI TTS ----------
+// 使用 OpenAI 的 TTS API，支持多种音色和模型。
+// 环境变量：OPENAI_API_KEY（必填）、OPENAI_TTS_VOICE（可选，默认 alloy）、OPENAI_TTS_MODEL（可选，默认 tts-1）
+const synthOneOpenAI = async (text, index, segment) => {
+  const apiKey = process.env.OPENAI_API_KEY ?? ENV.OPENAI_API_KEY ?? "";
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY 未配置（见 .env.example）");
+  }
+  const voice = process.env.OPENAI_TTS_VOICE ?? ENV.OPENAI_TTS_VOICE ?? "alloy";
+  const model = process.env.OPENAI_TTS_MODEL ?? ENV.OPENAI_TTS_MODEL ?? "tts-1";
+  let lastErr = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          input: text,
+          voice,
+          response_format: "mp3",
+        }),
+      });
+      if (res.ok) {
+        const mp3 = join(WORK_DIR, `${segment}-${index}.mp3`);
+        const wav = join(WORK_DIR, `${segment}-${index}.wav`);
+        writeFileSync(mp3, Buffer.from(await res.arrayBuffer()));
+        return toWav(mp3, wav);
+      }
+      lastErr = `${res.status}: ${(await res.text()).slice(0, 120)}`;
+    } catch (e) {
+      lastErr = e.message;
+    }
+    await new Promise((r) => setTimeout(r, Math.min(2000, 400 * (attempt + 1))));
+  }
+  throw new Error(`OpenAI TTS 重试失败 ${lastErr}`);
+};
+
+// ---------- Azure Speech ----------
+// 使用 Azure Cognitive Services Speech TTS。
+// 环境变量：AZURE_SPEECH_KEY（必填）、AZURE_SPEECH_REGION（必填，如 eastasia）、AZURE_SPEECH_VOICE（可选，默认 zh-CN-XiaoxiaoNeural）
+const synthOneAzure = async (text, index, segment) => {
+  const key = process.env.AZURE_SPEECH_KEY ?? ENV.AZURE_SPEECH_KEY ?? "";
+  const region = process.env.AZURE_SPEECH_REGION ?? ENV.AZURE_SPEECH_REGION ?? "";
+  if (!key) throw new Error("AZURE_SPEECH_KEY 未配置（见 .env.example）");
+  if (!region) throw new Error("AZURE_SPEECH_REGION 未配置（见 .env.example）");
+  const voice = process.env.AZURE_SPEECH_VOICE ?? ENV.AZURE_SPEECH_VOICE ?? "zh-CN-XiaoxiaoNeural";
+  let lastErr = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(
+        `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`,
+        {
+          method: "POST",
+          headers: {
+            "Ocp-Apim-Subscription-Key": key,
+            "Content-Type": "application/ssml+xml",
+            "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
+          },
+          body: `<?xml version="1.0" encoding="utf-8"?>
+<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-CN">
+  <voice name="${voice}">${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")}</voice>
+</speak>`,
+        },
+      );
+      if (res.ok) {
+        const mp3 = join(WORK_DIR, `${segment}-${index}.mp3`);
+        const wav = join(WORK_DIR, `${segment}-${index}.wav`);
+        writeFileSync(mp3, Buffer.from(await res.arrayBuffer()));
+        return toWav(mp3, wav);
+      }
+      lastErr = `${res.status}: ${(await res.text()).slice(0, 120)}`;
+    } catch (e) {
+      lastErr = e.message;
+    }
+    await new Promise((r) => setTimeout(r, Math.min(2000, 400 * (attempt + 1))));
+  }
+  throw new Error(`Azure Speech 重试失败 ${lastErr}`);
+};
+
+// ---------- Google Cloud TTS ----------
+// 使用 Google Cloud Text-to-Speech API。
+// 环境变量：GOOGLE_TTS_CREDENTIALS（必填，JSON 字符串或文件路径）、GOOGLE_TTS_VOICE（可选，默认 zh-CN-Standard-A）
+// 使用 Node.js 内置 crypto 进行 JWT 签名，无需额外依赖。
+const synthOneGoogle = async (text, index, segment) => {
+  const credentials = process.env.GOOGLE_TTS_CREDENTIALS ?? ENV.GOOGLE_TTS_CREDENTIALS ?? "";
+  if (!credentials) {
+    throw new Error("GOOGLE_TTS_CREDENTIALS 未配置（见 .env.example）");
+  }
+  const voice = process.env.GOOGLE_TTS_VOICE ?? ENV.GOOGLE_TTS_VOICE ?? "zh-CN-Standard-A";
+  // 如果 credentials 是文件路径，读取文件内容
+  let creds;
+  try {
+    creds = JSON.parse(credentials);
+  } catch {
+    // 可能是文件路径
+    try {
+      const { readFileSync } = await import("node:fs");
+      creds = JSON.parse(readFileSync(credentials, "utf8"));
+    } catch {
+      throw new Error("GOOGLE_TTS_CREDENTIALS 格式错误：应为 JSON 字符串或有效的文件路径");
+    }
+  }
+  const { createPrivateKey } = await import("node:crypto");
+  // 使用 Node.js 内置 crypto 构建 JWT
+  const header = { alg: "RS256", typ: "JWT" };
+  const now = Math.floor(Date.now() / 1000);
+  const claimSet = {
+    iss: creds.client_email,
+    scope: "https://www.googleapis.com/auth/cloud-platform",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now,
+  };
+  const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const signatureInput = `${b64(header)}.${b64(claimSet)}`;
+  const { sign } = await import("node:crypto");
+  const sig = sign("sha256", Buffer.from(signatureInput), createPrivateKey(creds.private_key));
+  const jwt = `${signatureInput}.${sig.toString("base64url")}`;
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt,
+    }),
+  });
+  const tokenData = await tokenRes.json();
+  if (!tokenData.access_token) {
+    throw new Error(`Google OAuth 失败：${JSON.stringify(tokenData)}`);
+  }
+  const accessToken = tokenData.access_token;
+
+  let lastErr = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(
+        `https://texttospeech.googleapis.com/v1/text:synthesize`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            input: { text },
+            voice: { languageCode: voice.split("-").slice(0, 2).join("-"), name: voice },
+            audioConfig: { audioEncoding: "MP3" },
+          }),
+        },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const mp3 = join(WORK_DIR, `${segment}-${index}.mp3`);
+        const wav = join(WORK_DIR, `${segment}-${index}.wav`);
+        writeFileSync(mp3, Buffer.from(data.audioContent, "base64"));
+        return toWav(mp3, wav);
+      }
+      lastErr = `${res.status}: ${(await res.text()).slice(0, 120)}`;
+    } catch (e) {
+      lastErr = e.message;
+    }
+    await new Promise((r) => setTimeout(r, Math.min(2000, 400 * (attempt + 1))));
+  }
+  throw new Error(`Google Cloud TTS 重试失败 ${lastErr}`);
+};
+
+// ---------- macOS 本地免费 fallback（零成本预览用）----------
 const synthOneSay = (text, index, segment) => {
   const voice = process.env.TTS_VOICE ?? "Tingting";
   const rate = Number(process.env.TTS_RATE ?? 210);
@@ -338,18 +519,239 @@ const synthOneSay = (text, index, segment) => {
   return toWav(aiff, wav);
 };
 
+// ---------- Windows 本地免费 TTS（PowerShell System.Speech）----------
+// 使用 Windows 内置的 System.Speech 语音合成，无需安装任何额外软件。
+// 中文语音名：Microsoft Huihui Desktop / Microsoft Yaoyao Desktop / Microsoft Kangkang Desktop
+// 英文语音名：Microsoft Zira Desktop / Microsoft David Desktop
+const synthOnePowerShell = (text, index, segment) => {
+  const voice = process.env.TTS_VOICE ?? "Microsoft Huihui Desktop";
+  const wav = join(WORK_DIR, `${segment}-${index}.wav`);
+  const script = `
+Add-Type -AssemblyName System.Speech;
+$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;
+try {
+  $s.SelectVoice('${voice.replace(/'/g, "''")}');
+} catch {}
+$s.SetOutputToWaveFile('${wav.replace(/\\/g, "\\\\")}');
+$s.Speak('${text.replace(/'/g, "''")}');
+$s.Dispose();
+`;
+  run("powershell", ["-Command", script]);
+  return durationOf(wav);
+};
+
+// ---------- Linux 本地免费 TTS（espeak-ng）----------
+// espeak-ng 是 Linux 最广泛使用的开源 TTS，支持中文（zh）和多种语言。
+// 安装：sudo apt install espeak-ng  或  sudo yum install espeak-ng  或  sudo pacman -S espeak-ng
+const synthOneEspeak = (text, index, segment) => {
+  const voice = process.env.TTS_VOICE ?? "zh";
+  const rate = Number(process.env.TTS_RATE ?? 160);
+  const wav = join(WORK_DIR, `${segment}-${index}.wav`);
+  try {
+    run("espeak-ng", ["-v", voice, "-s", String(rate), "-w", wav, text]);
+  } catch {
+    // 尝试用 espeak 作为 fallback（旧版名称）
+    run("espeak", ["-v", voice, "-s", String(rate), "-w", wav, text]);
+  }
+  return durationOf(wav);
+};
+
+// ---------- MOSS-TTS-Nano 本地 TTS（默认 auto 首选：免 Key、中文真人感）----------
+// 开源：https://github.com/OpenMOSS/MOSS-TTS-Nano （Apache-2.0，CPU 实时，0.1B + 20M tokenizer）
+// 部署（首次，一次性）：见下方 installMossHint() 的平台分步指引。
+// 常驻服务默认 http://127.0.0.1:18083；可用 MOSS_TTS_BASE_URL 覆盖。
+// 可选 MOSS_PROMPT_AUDIO=<参考音频路径>：3 秒语音克隆（给品牌固声线，参考音频是普通中文说话人即可）。
+const mossBaseUrl = () =>
+  (process.env.MOSS_TTS_BASE_URL ?? ENV.MOSS_TTS_BASE_URL ?? "http://127.0.0.1:18083").replace(/\/$/, "");
+
+// 首次 MOSS 失败时打印完整部署指引，后续只简短报错（避免逐镜刷屏）
+let mossHintShown = false;
+
+// 平台对应的 MOSS 部署指引
+const installMossHint = () => {
+  const p = platform();
+  const lines = [];
+  if (p === "darwin") {
+    lines.push("# macOS（命令行一行装完）");
+    lines.push("brew install python@3.12 ffmpeg");
+    lines.push("git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git && cd MOSS-TTS-Nano");
+    lines.push("python3.12 -m venv .venv && source .venv/bin/activate");
+    lines.push("pip install -r requirements.txt && pip install -e .");
+  } else if (p === "win32") {
+    lines.push("# Windows（PowerShell）");
+    lines.push('winget install Python.Python.3.12 Git.Git FFmpeg');
+    lines.push("git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git; cd MOSS-TTS-Nano");
+    lines.push("python -m venv .venv; .\\.venv\\Scripts\\activate");
+    lines.push("# pynini 是已知安装坑：非 Conda 需先按 Issue #6 装匹配平台的 pynini wheel");
+    lines.push("pip install -r requirements.txt; pip install -e .");
+  } else {
+    lines.push("# Linux");
+    lines.push("sudo apt install -y python3.12-venv ffmpeg git");
+    lines.push("git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git && cd MOSS-TTS-Nano");
+    lines.push("python3.12 -m venv .venv && source .venv/bin/activate");
+    lines.push("pip install -r requirements.txt && pip install -e .");
+  }
+  lines.push("# 启动常驻服务（模型首启约 5 分钟下载，之后秒开）：");
+  lines.push("moss-tts-nano serve  # 或 python app.py，默认 http://127.0.0.1:18083");
+  return lines.join("\n");
+};
+
+// 轮询任务直到出结果；tick：非 200 视为未就绪，最多 ~90s
+const pollMossResult = async (base, streamId) => {
+  const deadline = Date.now() + 90000;
+  let lastStatus = "";
+  while (Date.now() < deadline) {
+    const res = await fetch(`${base}/api/generate-stream/${streamId}/result`, { method: "GET" });
+    const text = await res.text();
+    if (res.status === 200) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        lastStatus = `  result 200 非 JSON: ${text.slice(0, 120)}`;
+      }
+    } else {
+      lastStatus = `  result ${res.status}: ${text.slice(0, 120)}`;
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  throw new Error(`MOSS 合成超时（90s）${lastStatus}`);
+};
+
+// 把 moss 返回的 base64 写成 wav。自动识别两种形态：
+//   - 完整 WAV（RIFF 头）：直接交给 ffmpeg 自动探测并转 44.1k mono
+//   - 裸 PCM：用 result 响应里的 sample_rate/channels（拿不到回退 48k/2ch）
+const writePcmWav = (base64, wav, { sampleRate = 48000, channels = 2 } = {}) => {
+  const buf = Buffer.from(base64, "base64");
+  const stem = wav.replace(/\.wav$/i, ""); // WORK_DIR/<seg>-<idx>
+  const isRiff = buf.length > 12 && buf.toString("ascii", 0, 4) === "RIFF";
+  if (isRiff) {
+    const rawWav = `${stem}.raw.wav`;
+    writeFileSync(rawWav, buf);
+    return toWav(rawWav, wav);
+  }
+  const pcm = `${stem}.pcm`;
+  writeFileSync(pcm, buf);
+  run("ffmpeg", [
+    "-y", "-loglevel", "error",
+    "-f", "s16le", "-ar", String(sampleRate), "-ac", String(channels), "-i", pcm,
+    "-ar", "44100", "-ac", "1", wav,
+  ]);
+  return durationOf(wav);
+};
+
+// MOSS 原生流式端点——单句语音合成（与其它 provider 一致：返回 wav 时长）
+const synthOneMoss = async (text, index, segment) => {
+  const base = mossBaseUrl();
+  const t0 = Date.now();
+  // 提交任务（form 字段与 app.py 的 /api/generate-stream/start 一致）
+  const form = new FormData();
+  form.append("text", text);
+  form.append("demo_id", "");
+  const promptAudio =
+    process.env.MOSS_PROMPT_AUDIO ?? ENV.MOSS_PROMPT_AUDIO ?? "";
+  if (promptAudio) {
+    if (!existsSync(promptAudio)) {
+      throw new Error(`MOSS_PROMPT_AUDIO 不存在：${promptAudio}（应为参考 wav/mp3）`);
+    }
+    const buf = readFileSync(promptAudio);
+    const ext = promptAudio.toLowerCase().endsWith(".mp3") ? "mp3" : "wav";
+    form.append("prompt_audio", new Blob([buf], { type: ext === "mp3" ? "audio/mpeg" : "audio/wav" }), `ref.${ext}`);
+  }
+  form.append("max_new_frames", "375");
+  form.append("seed", "0");
+
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${base}/api/generate-stream/start`, { method: "POST", body: form });
+      if (!res.ok) {
+        lastErr = `start ${res.status}: ${(await res.text()).slice(0, 120)}`;
+        // 快速重试前稍等
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      const data = await res.json();
+      const streamId = data.stream_id;
+      if (!streamId) {
+        lastErr = `响应无 stream_id: ${JSON.stringify(data).slice(0, 200)}`;
+        continue;
+      }
+      const result = await pollMossResult(base, streamId);
+      const b64 = result.audio_base64;
+      if (!b64) {
+        lastErr = "result 无 audio_base64（合成可能失败）";
+        continue;
+      }
+      const wav = join(WORK_DIR, `${segment}-${index}.wav`);
+      const sr = Number(result.sample_rate || 48000);
+      const ch = Number(result.channels || 2);
+      const dur = writePcmWav(b64, wav, { sampleRate: sr, channels: ch });
+      console.log(`  [moss] 句 ${index} ${dur.toFixed(2)}s（${Date.now() - t0}ms）`);
+      return dur;
+    } catch (e) {
+      lastErr = e.message;
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  // 首次失败打印完整部署指引（含平台命令），后续只报简短错误，避免逐镜刷屏
+  if (!mossHintShown) {
+    mossHintShown = true;
+    console.warn(
+      `\n[MOSS] 本地 TTS 不可用：${lastErr}\n` +
+        `      请确认 MOSS-TTS-Nano 服务已启动（默认 http://127.0.0.1:18083）。\n` +
+        `${installMossHint().split("\n").map((l) => `      ${l}`).join("\n")}\n`,
+    );
+  }
+  throw new Error(`MOSS 本地 TTS 失败：${lastErr}（服务未启动？部署指引已在上方输出）`);
+};
+
+// ---------- 自动检测平台兜底 ----------
+// auto 首选本地 MOSS（真人感、免 Key），不可达则按平台免费 TTS
+const autoSelectProvider = async () => {
+  const base = mossBaseUrl();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(`${base}/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (res.ok) {
+      return "moss"; // 本地服务可用 → 默认真人感
+    }
+  } catch {
+    // 服务未启动/不可达 → 平台兜底
+  }
+  const p = platform();
+  if (p === "darwin") return "say";
+  if (p === "win32") return "powershell";
+  if (p === "linux") return "espeak";
+  return "say"; // 默认 fallback
+};
+
 const PROVIDER_IMPL = {
+  moss: synthOneMoss,
   volcano: synthOneVolcano,
   elevenlabs: synthOneEleven,
+  openai: synthOneOpenAI,
+  azure: synthOneAzure,
+  google: synthOneGoogle,
   say: synthOneSay,
+  powershell: synthOnePowerShell,
+  espeak: synthOneEspeak,
 };
-const synthOne =
-  PROVIDER_IMPL[PROVIDER] ??
-  (() => {
+
+// 注意：不能用顶层 const 固化 PROVIDER_IMPL[PROVIDER]——
+// auto 模式在 main() 开头才把 PROVIDER 从 "auto" 解析成具体 provider，
+// 顶层取一次会拿到 PROVIDER_IMPL["auto"]=undefined（进而走 throw 闭包）。
+// 这里必须每次调用时动态查找，保证 auto 解析后生效。
+const synthOne = (text, index, segment) => {
+  const impl = PROVIDER_IMPL[PROVIDER];
+  if (!impl) {
     throw new Error(
-      `未知 TTS_PROVIDER: ${PROVIDER}（可选 volcano / elevenlabs / say）`,
+      `未知 TTS_PROVIDER: ${PROVIDER}（可选 moss / volcano / openai / azure / google / elevenlabs / say / powershell / espeak / auto）`,
     );
-  });
+  }
+  return impl(text, index, segment);
+};
 
 // ---- 主流程 ----
 const synthShot = async (shotIndex) => {
@@ -374,8 +776,9 @@ const synthShot = async (shotIndex) => {
 
   for (let i = 0; i < lines.length; i++) {
     const dur = await synthOne(lines[i], i, `s${shotIndex}`);
-    if (PROVIDER !== "say" && i < lines.length - 1) {
-      // 云 TTS 限流保护：句间小幅节流
+    // 云 TTS 限流保护：句间小幅节流（本地 provider moss/say/powershell/espeak 跳过）
+    const isCloud = ["volcano", "elevenlabs", "openai", "azure", "google"].includes(PROVIDER);
+    if (isCloud && i < lines.length - 1) {
       await new Promise((r) => setTimeout(r, 300));
     }
     timings.push({
@@ -414,6 +817,16 @@ const main = async () => {
   rmSync(WORK_DIR, { recursive: true, force: true });
   mkdirSync(WORK_DIR, { recursive: true });
   mkdirSync(AUDIO_DIR, { recursive: true });
+
+  // auto 选路：探测本地 MOSS 服务，可达则优先 moss，否则按平台免费 TTS
+  if (PROVIDER === "auto") {
+    PROVIDER = await autoSelectProvider();
+    console.log(
+      PROVIDER === "moss"
+        ? `  TTS_PROVIDER=auto → 本地 MOSS-TTS-Nano（真人感、免 Key）`
+        : `  TTS_PROVIDER=auto → ${PROVIDER}（本地 MOSS 不可达，按平台回落：${platform()}）`,
+    );
+  }
 
   console.log(`配音服务: ${PROVIDER}  (TTS_PROVIDER=${PROVIDER}，改 .env 或命令行可换)`);
 

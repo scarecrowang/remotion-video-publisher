@@ -113,13 +113,23 @@ Add new themes in `src/case/caseTheme.ts` (`CASE_PALETTES`).
 
 ## API Keys Required
 
-| Service | Purpose | How to Get |
-|---|---|---|
-| **Pexels** | B-roll video footage | https://www.pexels.com/api/ — free registration |
-| **Volcengine TTS** | AI voiceover (Chinese) | https://console.volcengine.com/speech/new — enable "Seed TTS" |
-| **ElevenLabs** | Alternative TTS (optional) | https://elevenlabs.io/ |
+| Service | Purpose | How to Get | Free TTS? |
+|---|---|---|---|
+| **Pexels** | B-roll video footage | https://www.pexels.com/api/ — free registration | — |
+| **Volcengine TTS** | Premium AI voiceover (Chinese) | https://console.volcengine.com/speech/new — enable "Seed TTS" | — |
+| **ElevenLabs** | Alternative TTS (optional) | https://elevenlabs.io/ | — |
+| **MOSS-TTS-Nano (local)** | Human-like Chinese voiceover, no API key | https://github.com/OpenMOSS/MOSS-TTS-Nano — Apache-2.0, CPU realtime | ✅ Free (self-hosted) |
+| **Built-in Free TTS** | macOS `say` / Windows `PowerShell` / Linux `espeak-ng` | **Zero config** — auto-detected by platform | ✅ Free |
 
-All keys go into `.env` (`.env.example` is provided as a template).
+> **Default TTS_PROVIDER is `auto`** — the script first probes for a local MOSS-TTS-Nano service (http://127.0.0.1:18083); if reachable it uses it (human-like Chinese, no key), otherwise falls back to the platform's built-in free TTS (macOS→say, Windows→powershell, Linux→espeak). For premium human-like Chinese voiceover with a cloud API, set `TTS_PROVIDER=volcano` in `.env`.
+>
+> **Install local MOSS-TTS-Nano (optional, recommended for free human-like voice):**
+> ```bash
+> git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git && cd MOSS-TTS-Nano
+> pip install -r requirements.txt && pip install -e .
+> moss-tts-nano serve    # persistent service on http://127.0.0.1:18083
+> ```
+> Once running, `auto` mode prefers it automatically. Optionally set `MOSS_PROMPT_AUDIO=<reference audio>` in `.env` to clone a fixed brand voice (3s clip).
 
 ---
 
@@ -154,7 +164,7 @@ out/<slug>/<slug>.mp4 + cover ← Final video
 |---|---|
 | "Command not found" | Node.js not installed. Run `node -v` to check |
 | B-roll download fails | Check PEXELS_API_KEY in .env; try different keywords |
-| TTS produces silent/short audio | Volcengine streaming JSON needs multi-chunk assembly (already handled) |
+| TTS produces silent/short audio | Volcengine streaming JSON needs multi-chunk assembly (already handled); or use free TTS (`TTS_PROVIDER=auto` for platform auto-detect) / local MOSS (auto-first) |
 | Content clipped/overflow | Shorten caption to ≤40 chars or split into multiple shots |
 | Wrong color palette | Check `theme:` in `## meta` matches a registered palette id |
 | Chrome not found | Run `npm run setup` to auto-download, or set `CHROME_EXECUTABLE` env var |

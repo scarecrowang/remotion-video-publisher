@@ -57,7 +57,7 @@ export const SCRIPT = {
     broll: "broll/two-people-coffee-shop.mp4",
   },
   cta: {
-    slogan: "晚遇知缘",
+    slogan: "深度洞察",
     tagline: "看透社交的底层逻辑",
     hint: "关注我 · 脱单不靠运气",
     captions: ["所以别再背话术了", "把状态调到最好", "比背十套开场白都管用"],
