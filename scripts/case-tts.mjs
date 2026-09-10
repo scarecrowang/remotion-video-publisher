@@ -648,10 +648,13 @@ const writePcmWav = (base64, wav, { sampleRate = 48000, channels = 2 } = {}) => 
 const synthOneMoss = async (text, index, segment) => {
   const base = mossBaseUrl();
   const t0 = Date.now();
+  // demo_id = 内置音色（真实服务必须传！空值会 400 "demo_id is required"）。
+  // 可用 MOSS_DEMO_ID 覆盖，默认 demo-5（讲课/纪录片旁白，稳重叙事感）。
+  const demoId = process.env.MOSS_DEMO_ID ?? ENV.MOSS_DEMO_ID ?? "demo-5";
   // 提交任务（form 字段与 app.py 的 /api/generate-stream/start 一致）
   const form = new FormData();
   form.append("text", text);
-  form.append("demo_id", "");
+  form.append("demo_id", demoId);
   const promptAudio =
     process.env.MOSS_PROMPT_AUDIO ?? ENV.MOSS_PROMPT_AUDIO ?? "";
   if (promptAudio) {

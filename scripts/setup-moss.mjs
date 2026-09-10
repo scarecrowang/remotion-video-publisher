@@ -22,7 +22,7 @@
  */
 
 import { execSync, spawnSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -66,6 +66,8 @@ const run = (cmd, argsList, opts = {}) => {
   const res = spawnSync(cmd, argsList, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    // 清掉沙箱注入的 PYTHONPATH（WorkBuddy/CodeBuddy 的 vendor/shim 会干扰 stdlib 定位，导致 ensurepip/venv 报错）
+    env: { ...process.env, PYTHONPATH: "" },
     ...opts,
   });
   return res;
@@ -86,13 +88,37 @@ const findPython = () => {
   return null;
 };
 
+// 是否可用 uv（部分 Python 发行版 `python -m venv` 的 ensurepip 会挂，uv 是稳的替代）
+const findUv = () => {
+  const r = run("uv", ["--version"]);
+  return r.status === 0;
+};
+
 // ---- 各步骤 ----
 const stepGitClone = () => {
-  if (existsSync(join(MOSS_HOME, ".git"))) {
+  // 校验"已存在"是否完整：真正的仓库必须有 app.py + requirements.txt（残缺.git骨架/断网残留不算）
+  const workDirOk =
+    existsSync(join(MOSS_HOME, "app.py")) && existsSync(join(MOSS_HOME, "requirements.txt"));
+  if (existsSync(join(MOSS_HOME, ".git")) && workDirOk) {
     console.log(c.green("  ✅") + ` 已存在 ${MOSS_HOME}，尝试 git pull 更新`);
     const r = run("git", ["-C", MOSS_HOME, "pull", "--ff-only"], { cwd: MOSS_HOME });
     if (r.status !== 0) console.log(c.dim("     pull 失败（无网络/被修改），继续用现有代码"));
-    return;
+    return true; // 已存在完整仓库，继续后续 venv/启动步骤！
+  }
+  // 残缺目录（上次 clone 失败残留）：改名备份而非删除，再重新克隆
+  if (existsSync(join(MOSS_HOME, ".git"))) {
+    const bak = `${MOSS_HOME}.broken-${Date.now()}`;
+    try {
+      renameSync(MOSS_HOME, bak);
+      console.log(c.yellow("  ⚠️") + ` 检测到不完整的残留目录（缺 app.py/requirements.txt），已备份到 ${bak}`);
+    } catch (e) {
+      console.warn(c.yellow("  ⚠️") + ` 残留目录备份失败: ${e.message}，尝试删除重来`);
+      try {
+        spawnSync("rm", ["-rf", MOSS_HOME], { stdio: "ignore" });
+      } catch {
+        /* 手动处理 */
+      }
+    }
   }
   mkdirSync(MOSS_HOME, { recursive: true });
   console.log(c.yellow("  ⏳") + ` 克隆 MOSS-TTS-Nano → ${MOSS_HOME}`);
@@ -114,34 +140,57 @@ const stepGitClone = () => {
   return true;
 };
 
+// pip/uv 安装命令：优先用 venv 内 python -m pip；若 venv 无 pip（uv venv 建的），用 uv pip
+const pkgInstall = (venvPython, ...argsArr) => {
+  if (existsSync(venvPython)) {
+    const pipPath = venvPython.replace(/python3?\.?\d*$/, "pip");
+    if (existsSync(pipPath)) return run(venvPython, ["-m", "pip", ...argsArr], { cwd: MOSS_HOME });
+    // uv venv 建的虚拟环境没有 pip → 用 uv pip
+    const uv = findUv() ? "uv" : null;
+    if (uv) return run(uv, ["pip", "install", "--python", venvPython, ...argsArr], { cwd: MOSS_HOME });
+  }
+  return { status: -1, stdout: "", stderr: "no pip/uv available" };
+};
+
 const stepCreateVenv = (py) => {
   if (existsSync(VENV_PYTHON)) {
     console.log(c.green("  ✅") + " .venv 已存在");
     return VENV_PYTHON;
   }
+  // 1) 先试标准 python -m venv（PYTHONPATH 已被清空）
   console.log(c.yellow("  ⏳") + ` 创建虚拟环境（python ${py.version}）...`);
-  const r = run(py.cmd, ["-m", "venv", VENV]);
+  let r = run(py.cmd, ["-m", "venv", VENV]);
+  // 2) ensurepip 挂（macOS uv 托管的 Python 常见）→ 清理残留后用 uv venv 替代
   if (r.status !== 0 || !existsSync(VENV_PYTHON)) {
-    console.warn(c.yellow("  ⚠️") + " 创建虚拟环境失败：" + (r.stderr || "").slice(0, 300));
-    return null;
+    const uvOk = findUv();
+    if (!uvOk) {
+      console.warn(c.yellow("  ⚠️") + " `python -m venv` 失败且未找到 uv，无法继续" + (r.stderr || "").slice(0, 200));
+      return null;
+    }
+    console.log(c.dim("     python venv 失败，改用 uv venv（更稳，自动处理 ensurepip）..."));
+    // --clear：uv 直接覆盖重建，免去先删残留目录（沙箱/权限下 rm 可能失败）
+    r = run("uv", ["venv", "--clear", "--python", py.cmd, VENV]);
+    if (r.status !== 0 || !existsSync(VENV_PYTHON)) {
+      console.warn(c.yellow("  ⚠️") + " uv venv 也失败：" + (r.stderr || "").slice(0, 300));
+      return null;
+    }
+    console.log(c.green("  ✅") + " .venv 创建完成（uv venv）");
+    return VENV_PYTHON;
   }
   console.log(c.green("  ✅") + " .venv 创建完成");
   return VENV_PYTHON;
 };
 
-const pip = (venvPython, ...rest) =>
-  run(venvPython, ["-m", "pip", ...rest], { cwd: MOSS_HOME });
-
 const stepInstallDeps = (venvPython) => {
   // 1) 先尝试常规安装
   console.log(c.yellow("  ⏳") + " 安装依赖（pip install -r requirements.txt + -e .，首次较慢）...");
-  let r = pip(venvPython, "install", "-r", "requirements.txt");
+  let r = pkgInstall(venvPython, "install", "-r", "requirements.txt");
   if (r.status !== 0) {
     // 2) pynini/WeTextProcessing 是已知安装坑：尝试先单独装 pynini 再重装剩余
     console.log(c.dim("     常规安装失败，疑似 pynini/WeTextProcessing 问题，尝试绕过..."));
     try {
-      const r2 = pip(venvPython, "install", "pynini==2.1.6.post1");
-      if (r2.status === 0) r = pip(venvPython, "install", "-r", "requirements.txt");
+      const r2 = pkgInstall(venvPython, "install", "pynini==2.1.6.post1");
+      if (r2.status === 0) r = pkgInstall(venvPython, "install", "-r", "requirements.txt");
     } catch {
       /* 不管 */
     }
@@ -162,7 +211,7 @@ const stepInstallDeps = (venvPython) => {
   }
   console.log(c.green("  ✅") + " 依赖安装完成");
   // -e .（安装 CLI，失败不致命）
-  const rDev = pip(venvPython, "install", "-e", ".");
+  const rDev = pkgInstall(venvPython, "install", "-e", ".");
   if (rDev.status !== 0) console.log(c.dim("  ⚠️ `-e .` 安装 CLI 失败（不影响 app.py 直接运行）"));
   else console.log(c.green("  ✅") + " 已安装 CLI (moss-tts-nano)");
   return true;
@@ -180,6 +229,8 @@ const stepStartServer = () => {
     detached: true,
     stdio: "ignore",
     windowsHide: true,
+    // 清掉沙箱注入的 PYTHONPATH，避免干扰 uvicorn/模型加载
+    env: { ...process.env, PYTHONPATH: "" },
   });
   child.unref();
 };

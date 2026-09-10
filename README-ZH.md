@@ -189,6 +189,20 @@ out/my-case/
 > 手动画兜底：`git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git && cd MOSS-TTS-Nano` → `pip install -r requirements.txt && pip install -e .` → `moss-tts-nano serve`（常驻，默认 http://127.0.0.1:18083）。Windows 遇 `pynini` 安装失败：脚本会自动先单独装 pynini 再重试，仍失败请按仓库 Issue #6 配匹配平台 wheel。
 > 之后 `auto` 模式自动优先用它；可用 `MOSS_PROMPT_AUDIO=` 指定参考音频固定声线。
 >
+> **内置音色（demo_id）选择**：默认 `demo-5`（讲课/纪录片旁白，稳重叙事感）。在 `.env` 里设 `MOSS_DEMO_ID=` 切换，常用：
+>
+> | demo_id | 音色 | 适合场景 |
+> |---|---|---|
+> | `demo-5` | 稳重男声·讲课/旁白（默认） | 纪录片、知识讲课、口播 |
+> | `demo-2` | 温柔治愈女声 | 心理科普、情感陪伴、晚安 |
+> | `demo-6` | 情绪饱满女声（杨幂气质） | 口播金句、情感短片 |
+> | `demo-1` | 正式商务感 | 企业宣传、课程片头 |
+> | `demo-3` | 台湾腔 | 轻松闲聊类 |
+> | `demo-4` | 京味胡同 | 烟火气叙事 |
+> | 其他语言 | demo-7~29 为各国新闻同一声线 | 仅对应语言 |
+>
+> 音色只是"声音特质"，说什么完全由你传入的文本决定；也可用 `MOSS_PROMPT_AUDIO` 传 3 秒参考音频做任意声线克隆。
+>
 > 想让配音有"更强真人感"（中文母语、自然），可以在 `.env` 文件里配火山引擎 Key（管理员做一次就行），然后在命令前加 `TTS_PROVIDER=volcano` 即可。
 
 ---
