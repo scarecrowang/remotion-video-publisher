@@ -649,8 +649,8 @@ const synthOneMoss = async (text, index, segment) => {
   const base = mossBaseUrl();
   const t0 = Date.now();
   // demo_id = 内置音色（真实服务必须传！空值会 400 "demo_id is required"）。
-  // 可用 MOSS_DEMO_ID 覆盖，默认 demo-5（讲课/纪录片旁白，稳重叙事感）。
-  const demoId = process.env.MOSS_DEMO_ID ?? ENV.MOSS_DEMO_ID ?? "demo-5";
+  // 可用 MOSS_DEMO_ID 覆盖，默认 demo-1（案例讲解，正式商务感）。
+  const demoId = process.env.MOSS_DEMO_ID ?? ENV.MOSS_DEMO_ID ?? "demo-1";
   // 提交任务（form 字段与 app.py 的 /api/generate-stream/start 一致）
   const form = new FormData();
   form.append("text", text);
